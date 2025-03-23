@@ -34,7 +34,7 @@ def has_data(page_number):
     """
     url = f"https://www.11888.gr/search/white_pages/{page_number}/"
     driver.get(url)
-    time.sleep(0.5)  # Allow time for page to load
+    time.sleep(0.2)  # Allow time for page to load
     if "search/white_pages" not in driver.current_url:
         return False
     try:
@@ -43,54 +43,43 @@ def has_data(page_number):
     except Exception:
         return False
 
-# --- Backward scanning to find the lowest page with data ---
-lower_bound = 1
-known_page = 79828332  # Use a known page that contains data
+# --- Pre-scan Phase: Find first page with data ---
+start_page = 50000000
+first_data_page = None
 
-lowest_page_with_data = None
-consecutive_empty = 0
-max_consecutive_empty = 50  # Stop if we hit 50 consecutive pages with no data
-
-page = known_page
-while page >= lower_bound:
-    url = f"https://www.11888.gr/search/white_pages/{page}/"
-    print(f"Checking page: {page} - {url}")
-    driver.get(url)
-    time.sleep(0.5)
-    
-    if has_data(page):
-        print(f"Data found on page {page}.")
-        lowest_page_with_data = page  # update the lowest page seen with data
-        consecutive_empty = 0  # reset counter
-    else:
-        print(f"No data on page {page}.")
-        consecutive_empty += 1
-
-    # If too many empty pages in a row, assume no further data exists below.
-    if consecutive_empty >= max_consecutive_empty:
-        print(f"Encountered {max_consecutive_empty} consecutive pages without data. Stopping backward scan.")
+while True:
+    print(f"Scanning block of pages from {start_page} to {start_page+9}...")
+    found_in_block = False
+    for page in range(start_page, start_page + 10):
+        print(f"Checking page {page}...")
+        if has_data(page):
+            first_data_page = page
+            found_in_block = True
+            print(f"Data found on page {page}.")
+            break
+    if found_in_block:
         break
+    else:
+        print(f"No data found in pages {start_page} to {start_page+9}. Jumping forward 10,000 pages.")
+        start_page += 10000
 
-    page -= 1
-
-if lowest_page_with_data is None:
-    print("No page with data found in the given range.")
+if first_data_page is None:
+    print("No page with data was found in the pre-scan range.")
     driver.quit()
     conn.close()
     exit()
 
-print(f"Lowest page with data found: {lowest_page_with_data}")
+print(f"First page with data found: {first_data_page}")
 
-# --- Scraping upward from the lowest page with data ---
-scrape_page = lowest_page_with_data
+# --- Scraping Phase: Scan consecutively starting at the first data page ---
+scrape_page = first_data_page
 consecutive_empty_scrape = 0
-max_consecutive_empty_scrape = 50  # Stop scraping if 50 consecutive pages have no data
 
-while consecutive_empty_scrape < max_consecutive_empty_scrape:
+while True:
     url = f"https://www.11888.gr/search/white_pages/{scrape_page}/"
-    print(f"Scraping page: {scrape_page} - {url}")
+    print(f"Scraping page {scrape_page} - {url}")
     driver.get(url)
-    time.sleep(0.5)
+    time.sleep(0.2)
     
     details_containers = driver.find_elements(By.CSS_SELECTOR, "div.details")
     if not details_containers:
@@ -98,7 +87,7 @@ while consecutive_empty_scrape < max_consecutive_empty_scrape:
         consecutive_empty_scrape += 1
     else:
         print(f"Data found on page {scrape_page}.")
-        consecutive_empty_scrape = 0  # reset since we found data
+        consecutive_empty_scrape = 0  # Reset counter since data is found
         for container in details_containers:
             driver.execute_script("arguments[0].scrollIntoView();", container)
             # --- Extract the name ---
@@ -142,7 +131,3 @@ while consecutive_empty_scrape < max_consecutive_empty_scrape:
     
     scrape_page += 1
 
-print("No data found for 50 consecutive pages. Stopping scraping.")
-driver.quit()
-conn.close()
-print("Scraping complete!")
